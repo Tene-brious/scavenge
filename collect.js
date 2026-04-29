@@ -38,6 +38,7 @@
   let troopIndexInOverview = {};
   let worldHasArchers = false;
   let fineTuningEnabled = false;
+  let runMode = "unknown";
 
   function detectWorldAndTroops() {
     const archerInput = document.querySelector('input[name="archer"]');
@@ -304,6 +305,413 @@
       }
     }
     return cleaned;
+  }
+
+  function isMassScavengePage() {
+    return Boolean(document.querySelector(".mass-scavenge-table"));
+  }
+
+  function isSingleScavengePage() {
+    return Boolean(
+      document.querySelector(".scavenge-option") &&
+      document.querySelector('input[name="spear"]')
+    );
+  }
+
+  function getAvailableOptionIdsSinglePage(selectedModes) {
+    const available = [];
+    for (const optionId of selectedModes) {
+      const optionCell = document.querySelector(`.scavenge-option:nth-child(${optionId})`);
+      if (!optionCell) continue;
+
+      const blocked =
+        optionCell.classList.contains("option-unavailable") ||
+        optionCell.classList.contains("option-locked");
+
+      if (!blocked) {
+        available.push(optionId);
+      }
+    }
+    return available;
+  }
+
+  function getSingleVillageRuntimeConfig(villageId) {
+    const selectedModes = getSelectedModes(villageId);
+    const percentToUse = getVillagePercent(villageId);
+    const troopEnabled = {};
+    const troopLimits = {};
+
+    for (const troop of troopTypes) {
+      troopEnabled[troop.key] = getTroopEnabled(villageId, troop.key);
+      troopLimits[troop.key] = getTroopLimit(villageId, troop.key);
+    }
+
+    return { selectedModes, percentToUse, troopEnabled, troopLimits };
+  }
+
+  function buildSingleVillageControlPanel(villageId, availableCounts) {
+    document.getElementById("single-scavenge-panel")?.remove();
+
+    const panel = document.createElement("div");
+    panel.id = "single-scavenge-panel";
+    panel.style.cssText =
+      "position: fixed; top: 72px; right: 12px; width: 320px; max-height: 86vh; overflow-y: auto; z-index: 10001; background: #f8f3e5; border: 2px solid rgb(210,180,100); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: Arial,sans-serif; color: #2c3e50;";
+
+    const config = getSingleVillageRuntimeConfig(villageId);
+
+    const optionsHtml = [1, 2, 3, 4]
+      .map((id) => {
+        const checked = config.selectedModes.includes(id) ? "checked" : "";
+        return `
+          <label style="display:inline-flex;align-items:center;gap:6px;margin-right:10px;cursor:pointer;">
+            <input type="checkbox" class="single-mode-checkbox" data-mode-id="${id}" ${checked}>
+            <span>${id}</span>
+          </label>
+        `;
+      })
+      .join("");
+
+    const troopRowsHtml = troopTypes
+      .map((troop) => {
+        const checked = config.troopEnabled[troop.key] ? "checked" : "";
+        const limit = config.troopLimits[troop.key] || "";
+        const count = availableCounts[troop.key] || 0;
+        return `
+          <div style="display:grid;grid-template-columns: 1fr auto;gap:6px;align-items:center;padding:2px 0;">
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" class="single-troop-enabled" data-troop-key="${troop.key}" ${checked}>
+              <span>${troop.icon} ${troop.name} (${count.toLocaleString()})</span>
+            </label>
+            <input
+              type="text"
+              class="single-troop-limit"
+              data-troop-key="${troop.key}"
+              value="${limit}"
+              placeholder="limit"
+              title="Maximum number or %, e.g. 1000 or 50%"
+              style="width:72px;padding:2px 4px;font-size:11px;"
+            />
+          </div>
+        `;
+      })
+      .join("");
+
+    panel.innerHTML = `
+      <div style="padding:10px 12px;background:rgb(210,180,100);border-radius:8px 8px 0 0;font-weight:bold;">
+        Non-Premium Scavenge Helper
+      </div>
+      <div style="padding:10px 12px;font-size:12px;">
+        <div style="margin-bottom:8px;">
+          <strong>Mode:</strong> single village (safer / semi-manual)
+        </div>
+        <div style="margin-bottom:8px;">
+          <strong>Village:</strong> ${villageId}
+        </div>
+        <div style="margin-bottom:8px;">
+          <strong>Options</strong><br>${optionsHtml}
+        </div>
+        <div style="margin-bottom:8px;">
+          <strong>Send %</strong>
+          <select id="single-percent-select" style="margin-left:8px;">
+            ${Array.from({ length: 11 }, (_, i) => i * 10)
+              .map((v) => `<option value="${v}" ${v === config.percentToUse ? "selected" : ""}>${v}%</option>`)
+              .join("")}
+          </select>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="single-fine-tuning" ${fineTuningEnabled ? "checked" : ""}>
+            <span>Use troop limits (fine tuning)</span>
+          </label>
+        </div>
+        <div style="margin-bottom:8px;">
+          <strong>Troops</strong>
+          <div style="margin-top:4px;">${troopRowsHtml}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+          <button id="single-calc-btn" style="padding:6px 8px;cursor:pointer;">Calculate</button>
+          <button id="single-send-btn" style="padding:6px 8px;cursor:pointer;">Send (confirm each)</button>
+          <button id="single-hide-btn" style="padding:6px 8px;cursor:pointer;">Hide panel</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    panel.querySelectorAll(".single-mode-checkbox").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const selected = Array.from(panel.querySelectorAll(".single-mode-checkbox"))
+          .filter((cb) => cb.checked)
+          .map((cb) => parseInt(cb.getAttribute("data-mode-id"), 10));
+        setSelectedModes(villageId, selected);
+      });
+    });
+
+    panel.querySelector("#single-percent-select")?.addEventListener("change", (event) => {
+      setVillagePercent(villageId, parseInt(event.target.value, 10));
+    });
+
+    panel.querySelector("#single-fine-tuning")?.addEventListener("change", (event) => {
+      fineTuningEnabled = event.target.checked;
+      setFineTuningEnabled(fineTuningEnabled);
+      console.log(fineTuningEnabled ? "Fine tuning enabled" : "Fine tuning disabled");
+    });
+
+    panel.querySelectorAll(".single-troop-enabled").forEach((checkbox) => {
+      checkbox.addEventListener("change", (event) => {
+        const troopKey = event.target.getAttribute("data-troop-key");
+        setTroopEnabled(villageId, troopKey, event.target.checked);
+      });
+    });
+
+    panel.querySelectorAll(".single-troop-limit").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        const troopKey = event.target.getAttribute("data-troop-key");
+        setTroopLimit(villageId, troopKey, event.target.value);
+      });
+    });
+
+    panel.querySelector("#single-hide-btn")?.addEventListener("click", () => {
+      panel.remove();
+    });
+  }
+
+  async function getCurrentVillageTroopCounts() {
+    const villageId = getCurrentVillageId();
+    if (!villageId) return null;
+
+    const troopDataByVillage = await fetchVillageTroopsFromOverview();
+    if (!troopDataByVillage || !troopDataByVillage[villageId]) return null;
+    return troopDataByVillage[villageId];
+  }
+
+  async function calculateSingleVillagePlan() {
+    const villageId = getCurrentVillageId();
+    if (!villageId) {
+      console.error("Could not determine current village ID");
+      return null;
+    }
+
+    const availableCounts = await getCurrentVillageTroopCounts();
+    if (!availableCounts) {
+      console.error("Could not load current village troop counts");
+      return null;
+    }
+
+    const config = getSingleVillageRuntimeConfig(villageId);
+
+    const enabledCounts = {};
+    for (const troop of troopTypes) {
+      enabledCounts[troop.key] = config.troopEnabled[troop.key] ? availableCounts[troop.key] : 0;
+    }
+
+    let troopsToSend = {};
+    for (const troop of troopTypes) {
+      troopsToSend[troop.key] = fineTuningEnabled
+        ? enabledCounts[troop.key]
+        : Math.floor((enabledCounts[troop.key] * config.percentToUse) / 100);
+    }
+
+    if (fineTuningEnabled) {
+      troopsToSend = applyTroopLimits(troopsToSend, config.troopLimits, availableCounts);
+    }
+
+    if (!Object.values(troopsToSend).some((value) => value > 0)) {
+      console.log("SKIP: no troops to send after filters/limits");
+      return [];
+    }
+
+    const availableModes = getAvailableOptionIdsSinglePage(config.selectedModes);
+    if (availableModes.length === 0) {
+      console.log("SKIP: no available scavenging options selected");
+      return [];
+    }
+
+    let totalWeight = 0;
+    for (const optionId of availableModes) {
+      totalWeight += OPTION_WEIGHTS[optionId];
+    }
+
+    const results = [];
+    for (const optionId of availableModes) {
+      const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+      const title = OPTION_TITLES[optionId];
+      const modeTroops = {};
+
+      for (const troop of troopTypes) {
+        modeTroops[troop.key] = Math.floor(troopsToSend[troop.key] * fraction);
+      }
+
+      const cleanedTroops = removeTinyCounts(modeTroops);
+      if (!Object.values(cleanedTroops).some((value) => value > 0)) continue;
+
+      for (const troop of troopTypes) {
+        setUnitInputValue(troop.key, cleanedTroops[troop.key]);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, OPTION_PREVIEW_DELAY_MS));
+
+      const optionCard = document.querySelector(`.scavenge-option:nth-child(${optionId})`);
+      const wood = parseInt(
+        optionCard?.querySelector(".wood-value")?.textContent.replace(/[^0-9]/g, ""),
+        10
+      ) || 0;
+      const stone = parseInt(
+        optionCard?.querySelector(".stone-value")?.textContent.replace(/[^0-9]/g, ""),
+        10
+      ) || 0;
+      const iron = parseInt(
+        optionCard?.querySelector(".iron-value")?.textContent.replace(/[^0-9]/g, ""),
+        10
+      ) || 0;
+      const duration = optionCard?.querySelector(".duration")?.textContent || "0:00:00";
+
+      results.push({
+        optionId,
+        title,
+        fraction,
+        troopsToSend: { ...cleanedTroops },
+        resources: { wood, stone, iron, total: wood + stone + iron },
+        duration,
+      });
+
+      clearScavengeInputs();
+      await new Promise((resolve) => setTimeout(resolve, CLEAR_FORM_DELAY_MS));
+    }
+
+    showResultsModal([
+      {
+        villageName: `Village ${villageId}`,
+        villageId,
+        percent: fineTuningEnabled ? "limits" : config.percentToUse,
+        fineTuningEnabled,
+        selectedModes: config.selectedModes,
+        totalToSend: troopsToSend,
+        results,
+      },
+    ]);
+
+    return results;
+  }
+
+  function findSinglePageSendButton(optionId) {
+    const optionCard = document.querySelector(`.scavenge-option:nth-child(${optionId})`);
+    if (!optionCard) return null;
+
+    const candidateButtons = optionCard.querySelectorAll("a, button, input[type='submit']");
+    for (const button of candidateButtons) {
+      const text = (button.textContent || button.value || "").trim().toLowerCase();
+      if (text.includes("start") || text.includes("começar") || text.includes("collect")) {
+        return button;
+      }
+    }
+    return null;
+  }
+
+  async function sendSingleVillageSemiManual() {
+    const villageId = getCurrentVillageId();
+    if (!villageId) {
+      console.error("Could not determine current village ID");
+      return 0;
+    }
+
+    const availableCounts = await getCurrentVillageTroopCounts();
+    if (!availableCounts) {
+      console.error("Could not load current village troop counts");
+      return 0;
+    }
+
+    const config = getSingleVillageRuntimeConfig(villageId);
+    const selectedModes = getAvailableOptionIdsSinglePage(config.selectedModes);
+    if (selectedModes.length === 0) {
+      alert("No available options selected.");
+      return 0;
+    }
+
+    const enabledCounts = {};
+    for (const troop of troopTypes) {
+      enabledCounts[troop.key] = config.troopEnabled[troop.key] ? availableCounts[troop.key] : 0;
+    }
+
+    let troopsToSend = {};
+    for (const troop of troopTypes) {
+      troopsToSend[troop.key] = fineTuningEnabled
+        ? enabledCounts[troop.key]
+        : Math.floor((enabledCounts[troop.key] * config.percentToUse) / 100);
+    }
+
+    if (fineTuningEnabled) {
+      troopsToSend = applyTroopLimits(troopsToSend, config.troopLimits, availableCounts);
+    }
+
+    let totalWeight = 0;
+    for (const optionId of selectedModes) {
+      totalWeight += OPTION_WEIGHTS[optionId];
+    }
+
+    let sentCount = 0;
+    for (const optionId of selectedModes) {
+      const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+      const optionTroops = {};
+
+      for (const troop of troopTypes) {
+        optionTroops[troop.key] = Math.floor(troopsToSend[troop.key] * fraction);
+      }
+
+      const cleanedTroops = removeTinyCounts(optionTroops);
+      if (!Object.values(cleanedTroops).some((value) => value > 0)) continue;
+
+      for (const troop of troopTypes) {
+        setUnitInputValue(troop.key, cleanedTroops[troop.key]);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, OPTION_PREVIEW_DELAY_MS));
+
+      const proceed = window.confirm(
+        `Option ${optionId} (${OPTION_TITLES[optionId]}) is prepared.\n\nClick OK to send this one option now, or Cancel to skip it.`
+      );
+
+      if (proceed) {
+        const sendButton = findSinglePageSendButton(optionId);
+        if (sendButton) {
+          sendButton.click();
+          sentCount += 1;
+          await new Promise((resolve) => setTimeout(resolve, SEND_DELAY_MS));
+        }
+      }
+
+      clearScavengeInputs();
+      await new Promise((resolve) => setTimeout(resolve, CLEAR_FORM_DELAY_MS));
+    }
+
+    alert(`Finished. Options sent: ${sentCount}`);
+    return sentCount;
+  }
+
+  async function initSingleVillageMode() {
+    const villageId = getCurrentVillageId();
+    if (!villageId) {
+      console.error("Could not determine current village ID");
+      return;
+    }
+
+    const availableCounts = await getCurrentVillageTroopCounts();
+    if (!availableCounts) {
+      console.error("Could not load current village troop counts");
+      return;
+    }
+
+    buildSingleVillageControlPanel(villageId, availableCounts);
+
+    document.getElementById("single-calc-btn")?.addEventListener("click", async () => {
+      await calculateSingleVillagePlan();
+    });
+
+    document.getElementById("single-send-btn")?.addEventListener("click", async () => {
+      await sendSingleVillageSemiManual();
+    });
+
+    console.log("Non-Premium mode is ready (single village, semi-manual send).");
   }
 
   function isOptionAvailableForVillage(villageId, optionId, selectedModes) {
@@ -1393,9 +1801,27 @@
     fineTuningEnabled = getFineTuningEnabled();
     console.log(`   Fine tuning: ${fineTuningEnabled ? "ON" : "OFF"}`);
 
-    await addColumnsToScavengeTable();
-    addActionButtons();
-    console.log("Scavenging script is ready!");
+    if (isMassScavengePage()) {
+      runMode = "mass";
+      console.log("   Mode: Premium mass scavenging page");
+      await addColumnsToScavengeTable();
+      addActionButtons();
+      console.log("Scavenging script is ready!");
+      return;
+    }
+
+    if (isSingleScavengePage()) {
+      runMode = "single";
+      console.log("   Mode: Non-Premium single village page");
+      await initSingleVillageMode();
+      console.log("Scavenging script is ready!");
+      return;
+    }
+
+    runMode = "unsupported";
+    console.warn(
+      "Unsupported page for this script. Open Mass Scavenge (Premium) or Collect (single village)."
+    );
   }
 
   if (document.readyState === "loading") {
