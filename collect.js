@@ -57,7 +57,6 @@
         { key: "light", name: "Light Cavalry", icon: "🐎", carry: 80, overviewIndex: 5 },
         { key: "marcher", name: "Mounted Archer", icon: "🏇", carry: 50, overviewIndex: 6 },
         { key: "heavy", name: "Heavy Cavalry", icon: "🛡️", carry: 50, overviewIndex: 7 },
-        { key: "knight", name: "Paladin", icon: "⚜️", carry: 100, overviewIndex: 10 },
       ];
     } else {
       worldHasArchers = false;
@@ -69,7 +68,6 @@
         { key: "axe", name: "Axeman", icon: "🪓", carry: 10, overviewIndex: 2 },
         { key: "light", name: "Light Cavalry", icon: "🐎", carry: 80, overviewIndex: 4 },
         { key: "heavy", name: "Heavy Cavalry", icon: "🛡️", carry: 50, overviewIndex: 5 },
-        { key: "knight", name: "Paladin", icon: "⚜️", carry: 100, overviewIndex: 6 },
       ];
     }
 
@@ -599,12 +597,7 @@
       let count = 0;
 
       if (input) {
-        // 1) Most reliable if present: HTML max attribute.
-        if (input.hasAttribute("max")) {
-          count = parseLocalizedInteger(input.getAttribute("max"));
-        }
-
-        // 2) Common layout: count appears in the same cell as "(1234)".
+        // 1) Common layout: count appears near the input as "(1234)".
         if (!count) {
           const container = input.closest("td, th, div");
           if (container) {
@@ -613,11 +606,20 @@
           }
         }
 
-        // 3) Last resort: nearby text around the input.
+        // 2) Last resort: nearby text around the input.
         if (!count) {
           const parentText = input.parentElement?.textContent || "";
           const match = parentText.match(/\(([\d.\s,]+)\)/);
           if (match) count = parseLocalizedInteger(match[1]);
+        }
+
+        // 3) Final fallback: input max attribute (some servers use a generic max, e.g. 99999).
+        // Ignore suspicious generic values unless no better signal was found.
+        if (!count && input.hasAttribute("max")) {
+          const maxAttr = parseLocalizedInteger(input.getAttribute("max"));
+          if (maxAttr > 0 && maxAttr !== 99999) {
+            count = maxAttr;
+          }
         }
       }
 
