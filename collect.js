@@ -160,6 +160,16 @@
     }
   }
 
+  function setDistributionMode(mode) {
+    const normalized = mode === "weighted" ? "weighted" : "even";
+    localStorage.setItem(`scavenge_distribution_${getWorldCode()}`, normalized);
+  }
+
+  function getDistributionMode() {
+    const value = localStorage.getItem(`scavenge_distribution_${getWorldCode()}`);
+    return value === "weighted" ? "weighted" : "even";
+  }
+
   function parseLimitValue(limitText, availableCount) {
     if (!limitText || limitText.trim() === "") return null;
 
@@ -336,6 +346,29 @@
     return available;
   }
 
+  function getOptionFractions(optionIds) {
+    if (!optionIds || optionIds.length === 0) return [];
+
+    const distributionMode = getDistributionMode();
+    if (distributionMode === "weighted") {
+      let totalWeight = 0;
+      for (const optionId of optionIds) {
+        totalWeight += OPTION_WEIGHTS[optionId];
+      }
+
+      return optionIds.map((optionId) => ({
+        optionId,
+        fraction: OPTION_WEIGHTS[optionId] / totalWeight,
+      }));
+    }
+
+    const evenFraction = 1 / optionIds.length;
+    return optionIds.map((optionId) => ({
+      optionId,
+      fraction: evenFraction,
+    }));
+  }
+
   function getSingleVillageRuntimeConfig(villageId) {
     const selectedModes = getSelectedModes(villageId);
     const percentToUse = getVillagePercent(villageId);
@@ -347,11 +380,14 @@
       troopLimits[troop.key] = getTroopLimit(villageId, troop.key);
     }
 
-    return { selectedModes, percentToUse, troopEnabled, troopLimits };
+    const distributionMode = getDistributionMode();
+    return { selectedModes, percentToUse, troopEnabled, troopLimits, distributionMode };
   }
 
   function buildSingleVillageControlPanel(villageId, availableCounts) {
     document.getElementById("single-scavenge-panel")?.remove();
+    const launcher = document.getElementById("single-scavenge-launcher");
+    if (launcher) launcher.style.display = "none";
 
     const panel = document.createElement("div");
     panel.id = "single-scavenge-panel";
@@ -420,6 +456,13 @@
           </select>
         </div>
         <div style="margin-bottom:8px;">
+          <strong>Distribution</strong>
+          <select id="single-distribution-select" style="margin-left:8px;">
+            <option value="even" ${config.distributionMode === "even" ? "selected" : ""}>Even (recommended)</option>
+            <option value="weighted" ${config.distributionMode === "weighted" ? "selected" : ""}>Weighted (15/6/3/2)</option>
+          </select>
+        </div>
+        <div style="margin-bottom:8px;">
           <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
             <input type="checkbox" id="single-fine-tuning" ${fineTuningEnabled ? "checked" : ""}>
             <span>Use troop limits (fine tuning)</span>
@@ -452,6 +495,15 @@
       setVillagePercent(villageId, parseInt(event.target.value, 10));
     });
 
+    panel.querySelector("#single-distribution-select")?.addEventListener("change", (event) => {
+      setDistributionMode(event.target.value);
+      console.log(
+        event.target.value === "weighted"
+          ? "Distribution mode: weighted (15/6/3/2)"
+          : "Distribution mode: even"
+      );
+    });
+
     panel.querySelector("#single-fine-tuning")?.addEventListener("change", (event) => {
       fineTuningEnabled = event.target.checked;
       setFineTuningEnabled(fineTuningEnabled);
@@ -474,7 +526,31 @@
 
     panel.querySelector("#single-hide-btn")?.addEventListener("click", () => {
       panel.remove();
+      const launchBtn = document.getElementById("single-scavenge-launcher");
+      if (launchBtn) launchBtn.style.display = "block";
     });
+  }
+
+  function ensureSinglePanelLauncher(villageId) {
+    let button = document.getElementById("single-scavenge-launcher");
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "single-scavenge-launcher";
+      button.textContent = "Show Scavenge Panel";
+      button.style.cssText =
+        "position: fixed; top: 72px; right: 12px; z-index: 10002; padding: 6px 8px; border: 1px solid #7a5f2a; background: rgb(210,180,100); color: #2c3e50; border-radius: 6px; cursor: pointer;";
+      document.body.appendChild(button);
+    }
+
+    button.style.display = "none";
+    button.onclick = async () => {
+      const counts = await getCurrentVillageTroopCounts();
+      if (!counts) {
+        alert("Could not refresh troop counts for current village.");
+        return;
+      }
+      buildSingleVillageControlPanel(villageId, counts);
+    };
   }
 
   async function getCurrentVillageTroopCounts() {
@@ -576,14 +652,10 @@
       return [];
     }
 
-    let totalWeight = 0;
-    for (const optionId of availableModes) {
-      totalWeight += OPTION_WEIGHTS[optionId];
-    }
+    const optionFractions = getOptionFractions(availableModes);
 
     const results = [];
-    for (const optionId of availableModes) {
-      const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+    for (const { optionId, fraction } of optionFractions) {
       const title = OPTION_TITLES[optionId];
       const modeTroops = {};
 
@@ -693,14 +765,10 @@
       troopsToSend = applyTroopLimits(troopsToSend, config.troopLimits, availableCounts);
     }
 
-    let totalWeight = 0;
-    for (const optionId of selectedModes) {
-      totalWeight += OPTION_WEIGHTS[optionId];
-    }
+    const optionFractions = getOptionFractions(selectedModes);
 
     let sentCount = 0;
-    for (const optionId of selectedModes) {
-      const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+    for (const { optionId, fraction } of optionFractions) {
       const optionTroops = {};
 
       for (const troop of troopTypes) {
@@ -750,6 +818,7 @@
       return;
     }
 
+    ensureSinglePanelLauncher(villageId);
     buildSingleVillageControlPanel(villageId, availableCounts);
 
     document.getElementById("single-calc-btn")?.addEventListener("click", async () => {
@@ -1360,14 +1429,10 @@
         continue;
       }
 
-      let totalWeight = 0;
-      for (const optionId of availableModes) {
-        totalWeight += OPTION_WEIGHTS[optionId];
-      }
+      const optionFractions = getOptionFractions(availableModes);
 
       const villageResults = [];
-      for (const optionId of availableModes) {
-        const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+      for (const { optionId, fraction } of optionFractions) {
         const title = OPTION_TITLES[optionId];
         const modeTroops = {};
 
@@ -1525,13 +1590,8 @@
         continue;
       }
 
-      let totalWeight = 0;
-      for (const optionId of availableModes) {
-        totalWeight += OPTION_WEIGHTS[optionId];
-      }
-
-      for (const optionId of availableModes) {
-        const fraction = OPTION_WEIGHTS[optionId] / totalWeight;
+      const optionFractions = getOptionFractions(availableModes);
+      for (const { optionId, fraction } of optionFractions) {
         const optionTitle = OPTION_TITLES[optionId];
         console.log(`   Option ${optionId} (${optionTitle})`);
 
