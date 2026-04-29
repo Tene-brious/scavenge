@@ -481,8 +481,56 @@
     if (!villageId) return null;
 
     const troopDataByVillage = await fetchVillageTroopsFromOverview();
-    if (!troopDataByVillage || !troopDataByVillage[villageId]) return null;
-    return troopDataByVillage[villageId];
+    if (troopDataByVillage && troopDataByVillage[villageId]) {
+      return troopDataByVillage[villageId];
+    }
+
+    // Fallback for servers/layouts where overview parsing differs.
+    console.warn("Falling back to troop counts from current Collect page");
+    return getCurrentVillageTroopCountsFromCollectPage();
+  }
+
+  function parseLocalizedInteger(text) {
+    if (!text) return 0;
+    const digitsOnly = text.replace(/[^\d]/g, "");
+    return digitsOnly ? parseInt(digitsOnly, 10) : 0;
+  }
+
+  function getCurrentVillageTroopCountsFromCollectPage() {
+    const result = {};
+
+    for (const troop of troopTypes) {
+      const input = document.querySelector(`input[name="${troop.key}"]`);
+      let count = 0;
+
+      if (input) {
+        // 1) Most reliable if present: HTML max attribute.
+        if (input.hasAttribute("max")) {
+          count = parseLocalizedInteger(input.getAttribute("max"));
+        }
+
+        // 2) Common layout: count appears in the same cell as "(1234)".
+        if (!count) {
+          const container = input.closest("td, th, div");
+          if (container) {
+            const match = container.textContent.match(/\(([\d.\s,]+)\)/);
+            if (match) count = parseLocalizedInteger(match[1]);
+          }
+        }
+
+        // 3) Last resort: nearby text around the input.
+        if (!count) {
+          const parentText = input.parentElement?.textContent || "";
+          const match = parentText.match(/\(([\d.\s,]+)\)/);
+          if (match) count = parseLocalizedInteger(match[1]);
+        }
+      }
+
+      result[troop.key] = count;
+    }
+
+    console.log("Troop counts read from current page:", result);
+    return result;
   }
 
   async function calculateSingleVillagePlan() {
