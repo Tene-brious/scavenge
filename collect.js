@@ -33,6 +33,7 @@
   const OPTION_PREVIEW_DELAY_MS = 1500;
   const CLEAR_FORM_DELAY_MS = 500;
   const SEND_DELAY_MS = 1000;
+  const SCRIPT_VERSION = "fallback";
 
   let troopTypes = [];
   let troopIndexInOverview = {};
@@ -1841,7 +1842,7 @@
   }
 
   async function init() {
-    console.log("Initializing scavenging script...");
+    console.log(`Initializing scavenging script... [${SCRIPT_VERSION}]`);
     console.log(`   Server: ${getWorldCode()}`);
     console.log(`   Current village ID: ${getCurrentVillageId()}`);
 
