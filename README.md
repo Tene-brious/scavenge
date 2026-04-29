@@ -1,4 +1,4 @@
-# Tribal Wars Scavenge Helper (English, Readable)
+# Tribal Wars Scavenge Helper
 
 A readable, English userscript for Tribal Wars scavenging that supports:
 
