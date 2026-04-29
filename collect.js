@@ -389,12 +389,22 @@
     const launcher = document.getElementById("single-scavenge-launcher");
     if (launcher) launcher.style.display = "none";
 
+    const config = getSingleVillageRuntimeConfig(villageId);
+    // Autofill empty limit fields with current troop counts from the Collect page.
+    for (const troop of troopTypes) {
+      const current = availableCounts[troop.key] || 0;
+      const savedLimit = (config.troopLimits[troop.key] || "").trim();
+      if (!savedLimit && current > 0) {
+        const normalized = String(current);
+        config.troopLimits[troop.key] = normalized;
+        setTroopLimit(villageId, troop.key, normalized);
+      }
+    }
+
     const panel = document.createElement("div");
     panel.id = "single-scavenge-panel";
     panel.style.cssText =
       "position: fixed; top: 72px; right: 12px; width: 320px; max-height: 86vh; overflow-y: auto; z-index: 10001; background: #f8f3e5; border: 2px solid rgb(210,180,100); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-family: Arial,sans-serif; color: #2c3e50;";
-
-    const config = getSingleVillageRuntimeConfig(villageId);
 
     const optionsHtml = [1, 2, 3, 4]
       .map((id) => {
