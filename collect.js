@@ -529,6 +529,14 @@
       const launchBtn = document.getElementById("single-scavenge-launcher");
       if (launchBtn) launchBtn.style.display = "block";
     });
+
+    panel.querySelector("#single-calc-btn")?.addEventListener("click", async () => {
+      await calculateSingleVillagePlan();
+    });
+
+    panel.querySelector("#single-send-btn")?.addEventListener("click", async () => {
+      await sendSingleVillageSemiManual();
+    });
   }
 
   function ensureSinglePanelLauncher(villageId) {
@@ -820,14 +828,6 @@
 
     ensureSinglePanelLauncher(villageId);
     buildSingleVillageControlPanel(villageId, availableCounts);
-
-    document.getElementById("single-calc-btn")?.addEventListener("click", async () => {
-      await calculateSingleVillagePlan();
-    });
-
-    document.getElementById("single-send-btn")?.addEventListener("click", async () => {
-      await sendSingleVillageSemiManual();
-    });
 
     console.log("Non-Premium mode is ready (single village, semi-manual send).");
   }
